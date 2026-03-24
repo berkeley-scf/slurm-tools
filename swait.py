@@ -231,9 +231,9 @@ def print_report(df, resource_label, partition, start_date, end_date, nodes, gpu
 
     console.print(f"\nWait Time and Preemption Analysis for partition '{partition}' from {start_date} to {end_date}")
     if nodes:
-        console.print(f"Filtered to nodes: {', '.join(nodes)}")
+        console.print(f"\nFiltered to nodes: {', '.join(nodes)}")
     if gpu_types:
-        console.print(f"Filtered to GPU types: {', '.join(gpu_types)}")
+        console.print(f"\nFiltered to GPU types: {', '.join(gpu_types)}")
 
     percentiles = [0.25, 0.50, 0.75, 0.90, 0.95, 0.99]
     pct_labels = ['p25', 'p50', 'p75', 'p90', 'p95', 'p99']

@@ -7,7 +7,7 @@ This script queries sacct for job data and reports wait time percentiles
 GPUs (for GPU partitions) or CPUs (for non-GPU partitions).
 
 Usage:
-    python swait.py -S START_DATE -E END_DATE -p PARTITION [--nodes NODE1,NODE2,...] [--gpu TYPE1,TYPE2,...] [-m|--minutes_only] [-v]
+    python swait.py -S START_DATE -E END_DATE -p PARTITION [--nodes NODE1,NODE2,...] [--gpu TYPE1,TYPE2,...] [--time_units] [-v]
 
 Arguments:
     -S, --start-date: Start date in YYYY-MM-DD format (required)
@@ -15,7 +15,7 @@ Arguments:
     -p, --partition:  Partition name (required)
     --nodes:          Comma-separated list of nodes to filter on (optional)
     --gpu:            Comma-separated list of GPU types to filter on (optional)
-    -m, --minutes_only: Report all wait times only in rounded whole minutes
+    --time_units:     Report wait times in seconds/minutes/hours/days (default: whole minutes)
     -v, --verbose:    Enable verbose output
 
 Examples:
@@ -23,8 +23,7 @@ Examples:
     python swait.py -S 2025-01-01 -E 2025-06-30 -p jsteinhardt --nodes smaug,balrog
     python swait.py -S 2025-01-01 -E 2025-06-30 -p gpu --gpu A100
     python swait.py -S 2025-01-01 -E 2025-06-30 -p gpu --gpu A5000,A4000
-    python swait.py -S 2025-01-01 -E 2025-06-30 -p low -m
-    python swait.py -S 2025-01-01 -E 2025-06-30 -p low --minutes_only
+    python swait.py -S 2025-01-01 -E 2025-06-30 -p low --time_units
     python swait.py -S 2025-01-01 -E 2025-06-30 -p lambda -v
 """
 
@@ -56,8 +55,8 @@ def parse_arguments():
                         help='Comma-separated list of nodes to filter on')
     parser.add_argument('--gpu', type=str, default=None,
                         help='Comma-separated list of GPU types to filter on (e.g., A100,A5000)')
-    parser.add_argument('-m', '--minutes_only', '--minutes-only', dest='minutes_only', default=True, action='store_true',
-                        help='Report all wait times only in rounded whole minutes')
+    parser.add_argument('--time_units', '--time-units', dest='time_units', default=False, action='store_true',
+                        help='Report wait times in seconds/minutes/hours/days (default: whole minutes)')
     parser.add_argument('-v', '--verbose', action='store_true',
                         help='Enable verbose output')
     return parser.parse_args()
@@ -200,9 +199,9 @@ def compute_wait_times(df, partition, nodes, gpu_types, capacity_df, verbose=Fal
     return df, resource_label
 
 
-def format_duration(minutes, minutes_only=False):
+def format_duration(minutes, time_units=False):
     """Format a duration in minutes for reporting."""
-    if minutes_only:
+    if not time_units:
         return f"{minutes:.0f}"
     if minutes < 1:
         return f"{minutes * 60:.0f}s"
@@ -226,7 +225,7 @@ def wait_color(minutes):
         return 'red'
 
 
-def print_report(df, resource_label, partition, start_date, end_date, nodes, gpu_types, minutes_only):
+def print_report(df, resource_label, partition, start_date, end_date, nodes, gpu_types, time_units):
     """Print wait time percentiles grouped by QoS and resource count."""
     console = Console()
 
@@ -273,10 +272,10 @@ def print_report(df, resource_label, partition, start_date, end_date, nodes, gpu
 
     col_width = max(8, len(resource_label))
 
-    if minutes_only:
-        console.print("\nWait time percentiles in minutes")
-    else:
+    if time_units:
         console.print("\nWait time percentiles (formatted as seconds/minutes/hours/days):")
+    else:
+        console.print("\nWait time percentiles in minutes")
 
     table = Table(show_header=True, header_style="bold")
     table.add_column("QoS", justify="left", min_width=20)
@@ -291,14 +290,21 @@ def print_report(df, resource_label, partition, start_date, end_date, nodes, gpu
         if prev_qos is not None and row['QoS'] != prev_qos:
             table.add_section()
         pct_cells = [
-            Text(format_duration(val, minutes_only=minutes_only), style=wait_color(val))
+            Text(format_duration(val, time_units=time_units), style=wait_color(val))
             for val in row['pct_values']
         ]
+        ratio = row['n_preempted'] / row['n_jobs'] if row['n_jobs'] > 0 else 0
+        if ratio < 0.01:
+            preempt_color = 'green'
+        elif ratio < 0.1:
+            preempt_color = 'yellow'
+        else:
+            preempt_color = 'red'
         table.add_row(
             row['QoS'],
             row[resource_label],
             f"{row['n_jobs']:,}",
-            f"{row['n_preempted']:,}",
+            Text(f"{row['n_preempted']:,}", style=preempt_color),
             *pct_cells,
         )
         prev_qos = row['QoS']
@@ -339,7 +345,7 @@ def main():
         print(f"No jobs with valid wait times found.", file=sys.stderr)
         sys.exit(1)
 
-    print_report(wait_df, resource_label, args.partition, args.start_date, args.end_date, nodes, gpu_types, args.minutes_only)
+    print_report(wait_df, resource_label, args.partition, args.start_date, args.end_date, nodes, gpu_types, args.time_units)
 
 
 if __name__ == "__main__":

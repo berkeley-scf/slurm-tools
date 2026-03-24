@@ -36,6 +36,10 @@ import subprocess
 import io
 from datetime import datetime
 
+from rich.console import Console
+from rich.table import Table
+from rich.text import Text
+
 
 def parse_arguments():
     parser = argparse.ArgumentParser(
@@ -212,15 +216,26 @@ def format_duration(minutes, minutes_only=False):
         return f"{days:.0f}d"
 
 
+def wait_color(minutes):
+    """Return a rich color name based on wait time in minutes."""
+    if minutes < 10:
+        return 'green'
+    elif minutes < 120:
+        return 'yellow'
+    else:
+        return 'red'
+
+
 def print_report(df, resource_label, partition, start_date, end_date, nodes, gpu_types, minutes_only):
     """Print wait time percentiles grouped by QoS and resource count."""
-    output = []
-    output.append(f"\nWait Time Analysis for partition '{partition}' from {start_date} to {end_date}")
+    console = Console()
+
+    console.print(f"\nWait Time Analysis for partition '{partition}' from {start_date} to {end_date}")
     if nodes:
-        output.append(f"Filtered to nodes: {', '.join(nodes)}")
+        console.print(f"Filtered to nodes: {', '.join(nodes)}")
     if gpu_types:
-        output.append(f"Filtered to GPU types: {', '.join(gpu_types)}")
-    
+        console.print(f"Filtered to GPU types: {', '.join(gpu_types)}")
+
     percentiles = [0.25, 0.50, 0.75, 0.90, 0.95, 0.99]
     pct_labels = ['p25', 'p50', 'p75', 'p90', 'p95', 'p99']
 
@@ -239,7 +254,7 @@ def print_report(df, resource_label, partition, start_date, end_date, nodes, gpu
             order = int(res)
         return (qos, order)
 
-    # Build rows
+    # Build rows storing raw minute values for coloring
     rows = []
     for (qos, res_count), group in sorted(grouped, key=sort_key):
         waits = group['wait_minutes']
@@ -249,38 +264,47 @@ def print_report(df, resource_label, partition, start_date, end_date, nodes, gpu
             resource_label: str(res_count),
             'n_jobs': len(group),
             'n_preempted': (group['State'] == 'PREEMPTED').sum(),
-            **{lbl: format_duration(val, minutes_only=minutes_only) for lbl, val in zip(pct_labels, pcts)},
+            'pct_values': pcts,
         })
 
     if not rows:
-        output.append("\nNo jobs found matching criteria.")
-        return '\n'.join(output)
+        console.print("\nNo jobs found matching criteria.")
+        return
 
-    result_df = pd.DataFrame(rows)
+    col_width = max(8, len(resource_label))
 
-    # Format header
-    col_width = 8 if is_cpu else 6
-    header = f"{'QoS':<20s} {resource_label:>{col_width}s} {'n_jobs':>8s} {'n_preempt':>9s} {'p25':>8s} {'p50':>8s} {'p75':>8s} {'p90':>8s} {'p95':>8s} {'p99':>8s}"
-    output.append("")
     if minutes_only:
-        output.append("Wait time percentiles in minutes")
+        console.print("\nWait time percentiles in minutes")
     else:
-        output.append("Wait time percentiles (formatted as seconds/minutes/hours/days):")
-    output.append("")
-    output.append(header)
-    output.append("=" * len(header))
+        console.print("\nWait time percentiles (formatted as seconds/minutes/hours/days):")
+
+    table = Table(show_header=True, header_style="bold")
+    table.add_column("QoS", justify="left", min_width=20)
+    table.add_column(resource_label, justify="right", min_width=col_width)
+    table.add_column("n_jobs", justify="right", min_width=8)
+    table.add_column("n_preempt", justify="right", min_width=9)
+    for lbl in pct_labels:
+        table.add_column(lbl, justify="right", min_width=8)
 
     prev_qos = None
-    for _, row in result_df.iterrows():
+    for row in rows:
         if prev_qos is not None and row['QoS'] != prev_qos:
-            output.append("-" * len(header))
-        line = f"{row['QoS']:<20s} {row[resource_label]:>{col_width}s} {row['n_jobs']:>8,d} {row['n_preempted']:>9,d} {row['p25']:>8s} {row['p50']:>8s} {row['p75']:>8s} {row['p90']:>8s} {row['p95']:>8s} {row['p99']:>8s}"
-        output.append(line)
+            table.add_section()
+        pct_cells = [
+            Text(format_duration(val, minutes_only=minutes_only), style=wait_color(val))
+            for val in row['pct_values']
+        ]
+        table.add_row(
+            row['QoS'],
+            row[resource_label],
+            f"{row['n_jobs']:,}",
+            f"{row['n_preempted']:,}",
+            *pct_cells,
+        )
         prev_qos = row['QoS']
 
-    output.append("")
-    output.append(f"Total jobs analyzed: {len(df):,}")
-    return '\n'.join(output)
+    console.print(table)
+    console.print(f"Total jobs analyzed: {len(df):,}")
 
 
 def main():
@@ -315,8 +339,7 @@ def main():
         print(f"No jobs with valid wait times found.", file=sys.stderr)
         sys.exit(1)
 
-    report = print_report(wait_df, resource_label, args.partition, args.start_date, args.end_date, nodes, gpu_types, args.minutes_only)
-    print(report)
+    print_report(wait_df, resource_label, args.partition, args.start_date, args.end_date, nodes, gpu_types, args.minutes_only)
 
 
 if __name__ == "__main__":

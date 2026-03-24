@@ -97,7 +97,7 @@ def query_sacct_data(start_date, end_date, partition, verbose=False):
         '-S', start_date,
         '-E', end_date,
         '-r', partition,
-        '--format=JobID,User,Partition,QoS,Account,NodeList,Submit,Start,Elapsed,ElapsedRaw,AllocCPUS,AllocTRES',
+        '--format=JobID,User,Partition,QoS,Account,NodeList,Submit,Start,Elapsed,ElapsedRaw,AllocCPUS,AllocTRES,State',
         '--parsable2',
         '--allocations',
     ]
@@ -248,6 +248,7 @@ def print_report(df, resource_label, partition, start_date, end_date, nodes, gpu
             'QoS': qos,
             resource_label: str(res_count),
             'n_jobs': len(group),
+            'n_preempted': (group['State'] == 'PREEMPTED').sum(),
             **{lbl: format_duration(val, minutes_only=minutes_only) for lbl, val in zip(pct_labels, pcts)},
         })
 
@@ -259,7 +260,7 @@ def print_report(df, resource_label, partition, start_date, end_date, nodes, gpu
 
     # Format header
     col_width = 8 if is_cpu else 6
-    header = f"{'QoS':<20s} {resource_label:>{col_width}s} {'n_jobs':>8s} {'p25':>8s} {'p50':>8s} {'p75':>8s} {'p90':>8s} {'p95':>8s} {'p99':>8s}"
+    header = f"{'QoS':<20s} {resource_label:>{col_width}s} {'n_jobs':>8s} {'n_preempt':>9s} {'p25':>8s} {'p50':>8s} {'p75':>8s} {'p90':>8s} {'p95':>8s} {'p99':>8s}"
     output.append("")
     if minutes_only:
         output.append("Wait time percentiles in minutes")
@@ -273,7 +274,7 @@ def print_report(df, resource_label, partition, start_date, end_date, nodes, gpu
     for _, row in result_df.iterrows():
         if prev_qos is not None and row['QoS'] != prev_qos:
             output.append("-" * len(header))
-        line = f"{row['QoS']:<20s} {row[resource_label]:>{col_width}s} {row['n_jobs']:>8,d} {row['p25']:>8s} {row['p50']:>8s} {row['p75']:>8s} {row['p90']:>8s} {row['p95']:>8s} {row['p99']:>8s}"
+        line = f"{row['QoS']:<20s} {row[resource_label]:>{col_width}s} {row['n_jobs']:>8,d} {row['n_preempted']:>9,d} {row['p25']:>8s} {row['p50']:>8s} {row['p75']:>8s} {row['p90']:>8s} {row['p95']:>8s} {row['p99']:>8s}"
         output.append(line)
         prev_qos = row['QoS']
 

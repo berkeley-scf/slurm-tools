@@ -229,7 +229,7 @@ def print_report(df, resource_label, partition, start_date, end_date, nodes, gpu
     """Print wait time percentiles grouped by QoS and resource count."""
     console = Console()
 
-    console.print(f"\nWait Time Analysis for partition '{partition}' from {start_date} to {end_date}")
+    console.print(f"\nWait Time and Preemption Analysis for partition '{partition}' from {start_date} to {end_date}")
     if nodes:
         console.print(f"Filtered to nodes: {', '.join(nodes)}")
     if gpu_types:
@@ -273,9 +273,9 @@ def print_report(df, resource_label, partition, start_date, end_date, nodes, gpu
     col_width = max(8, len(resource_label))
 
     if time_units:
-        console.print("\nWait time percentiles (formatted as seconds/minutes/hours/days):")
+        console.print("\nNumber of preempted jobs and wait time percentiles (formatted as seconds/minutes/hours/days):")
     else:
-        console.print("\nWait time percentiles in minutes")
+        console.print("\nNumber of preempted jobs and wait time percentiles in minutes:")
 
     table = Table(show_header=True, header_style="bold")
     table.add_column("QoS", justify="left", min_width=20)

@@ -10,21 +10,24 @@ Usage:
     python swait.py -S START_DATE -E END_DATE -p PARTITION [--nodes NODE1,NODE2,...] [--gpu TYPE1,TYPE2,...] [--time_units] [-v]
 
 Arguments:
-    -S, --start-date: Start date in YYYY-MM-DD format (required)
-    -E, --end-date:   End date in YYYY-MM-DD format (required)
+    -S, --start-date: Start date in YYYY-MM-DD format (defaults to 28 days ago)
+    -E, --end-date:   End date in YYYY-MM-DD format (defaults to "now")
     -p, --partition:  Partition name (required)
     --nodes:          Comma-separated list of nodes to filter on (optional)
-    --gpu:            Comma-separated list of GPU types to filter on (optional)
+    --gpu_type:       Comma-separated list of GPU types to filter on (optional)
     --time_units:     Report wait times in seconds/minutes/hours/days (default: whole minutes)
     -v, --verbose:    Enable verbose output
+    -f, --nodefile:   Node capacity file (defaults to `/var/nitedump/node-capacity.txt`)
 
 Examples:
     python swait.py -S 2025-01-01 -E 2025-06-30 -p low
     python swait.py -S 2025-01-01 -E 2025-06-30 -p jsteinhardt --nodes smaug,balrog
-    python swait.py -S 2025-01-01 -E 2025-06-30 -p gpu --gpu A100
-    python swait.py -S 2025-01-01 -E 2025-06-30 -p gpu --gpu A5000,A4000
+    python swait.py -S 2025-01-01 -E 2025-06-30 -p gpu --gpu_type A100
+    python swait.py -S 2025-01-01 -E 2025-06-30 -p gpu --gpu_type A5000,A4000
     python swait.py -S 2025-01-01 -E 2025-06-30 -p low --time_units
     python swait.py -S 2025-01-01 -E 2025-06-30 -p lambda -v
+
+The script uses a pipe-delimited file containing per-node cpu/gpu hardware information, with fields: partition, node, cpus, hyperthreading, gpus, gpu_type
 """
 
 import pandas as pd
@@ -45,34 +48,36 @@ def parse_arguments():
         description='Analyze Slurm job queue wait times by QoS and resource allocation',
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument('-S', '--start-date', type=str, required=True,
+    parser.add_argument('-S', '--start-date', type=str, default="now-28days",
                         help='Start date in YYYY-MM-DD format')
-    parser.add_argument('-E', '--end-date', type=str, required=True,
+    parser.add_argument('-E', '--end-date', type=str, default="now",
                         help='End date in YYYY-MM-DD format')
     parser.add_argument('-p', '--partition', type=str, required=True,
                         help='Partition name to analyze')
     parser.add_argument('--nodes', type=str, default=None,
                         help='Comma-separated list of nodes to filter on')
-    parser.add_argument('--gpu', type=str, default=None,
+    parser.add_argument('--gpu_type', type=str, default=None,
                         help='Comma-separated list of GPU types to filter on (e.g., A100,A5000)')
     parser.add_argument('--time_units', '--time-units', dest='time_units', default=False, action='store_true',
                         help='Report wait times in seconds/minutes/hours/days (default: whole minutes)')
     parser.add_argument('-v', '--verbose', action='store_true',
                         help='Enable verbose output')
+    parser.add_argument('-f', '--nodefile', type=str, default="/var/nitedump/node-capacity.txt",
+                        help='File with per-node hardware information')
     return parser.parse_args()
 
 
-def load_capacity_data(verbose=False):
+def load_capacity_data(nodefile, verbose=False):
     """Load node capacity data from node-capacity.txt."""
     try:
-        capacity_df = pd.read_csv('/var/nitedump/node-capacity.txt', sep='|')
+        capacity_df = pd.read_csv(nodefile, sep='|')
         if verbose:
             print(f"Loaded capacity data for {len(capacity_df)} nodes")
         return capacity_df
     except (FileNotFoundError, Exception) as e:
-        if verbose:
-            print(f"Warning: Could not read node-capacity.txt: {e}")
-        return pd.DataFrame(columns=['node', 'partition', 'cpus', 'gpus', 'hyperthreading', 'gpu_type'])
+        print(f"`swait` requires valid file '/var/nitedump/node-capacity.txt' with node-specific information.")
+        raise 
+        
 
 
 def partition_has_gpus(capacity_df, partition):
@@ -321,10 +326,10 @@ def main():
         nodes = [n.strip() for n in args.nodes.split(',')]
 
     gpu_types = None
-    if args.gpu:
+    if args.gpu_type:
         gpu_types = [g.strip() for g in args.gpu.split(',')]
 
-    capacity_df = load_capacity_data(args.verbose)
+    capacity_df = load_capacity_data(args.nodefile, args.verbose)
 
     if args.verbose:
         print(f"Querying job data from {args.start_date} to {args.end_date}...")

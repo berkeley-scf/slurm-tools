@@ -194,12 +194,12 @@ def compute_wait_times(df, partition, nodes, gpu_types, capacity_df, verbose=Fal
     has_gpus = partition_has_gpus(capacity_df, partition)
     if has_gpus:
         df['resource_count'] = df['AllocTRES'].apply(parse_gpu_allocation)
-        resource_label = 'GPUs'
+        resource_label = 'n_GPUs'
     else:
         cpu_bins = [0, 1, 2, 4, 8, 16, 32, 64, 128, float('inf')]
         cpu_labels = ['1', '2', '3-4', '5-8', '9-16', '17-32', '33-64', '65-128', '>128']
         df['resource_count'] = pd.cut(df['AllocCPUS'], bins=cpu_bins, labels=cpu_labels, right=True)
-        resource_label = 'CPUs'
+        resource_label = 'n_CPUs'
 
     return df, resource_label
 
@@ -248,7 +248,7 @@ def print_report(df, resource_label, partition, start_date, end_date, nodes, gpu
     grouped = df.groupby(['QOS', 'resource_count'], observed=True)
 
     cpu_bin_order = ['1', '2', '3-4', '5-8', '9-16', '17-32', '33-64', '65-128', '>128']
-    is_cpu = resource_label == 'CPUs'
+    is_cpu = resource_label == 'n_CPUs'
 
     def sort_key(item):
         qos, res = item[0]
